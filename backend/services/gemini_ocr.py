@@ -13,7 +13,7 @@ class GeminiOCRService:
             raise ValueError("GEMINI_API_KEY not set in environment variables")
         
         genai.configure(api_key=Config.GEMINI_API_KEY)
-        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-flash')
         
     def _generate_content_with_retry(self, inputs, config=None, max_retries=3):
         """Helper to retry API calls on 429 errors"""
