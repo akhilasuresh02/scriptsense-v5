@@ -255,6 +255,11 @@ export const deleteSubject = async (subjectId) => {
     return response.data;
 };
 
+export const updateSubject = async (subjectId, name, className, academicYear) => {
+    const response = await api.put(`subjects/${subjectId}`, { name, className, academicYear });
+    return response.data;
+};
+
 export const getSubjectStudents = async (subjectId) => {
     const response = await api.get(`subjects/${subjectId}/students`);
     return response.data;
@@ -307,8 +312,8 @@ export const analyzeBlooms = async (text) => {
 
 // ── NEW: Auth API functions ───────────────────────────────────────────────────
 
-export const registerFaculty = async (name, email, password) => {
-    const response = await api.post('auth/register', { name, email, password });
+export const registerFaculty = async (name, email, password, department) => {
+    const response = await api.post('auth/register', { name, email, password, department });
     return response.data;
 };
 

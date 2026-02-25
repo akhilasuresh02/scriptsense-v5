@@ -30,6 +30,7 @@ def register():
         name = (data.get('name') or '').strip()
         email = (data.get('email') or '').strip().lower()
         password = data.get('password', '')
+        department = (data.get('department') or '').strip() or None
 
         # Validate required fields
         if not name or not email or not password:
@@ -43,7 +44,7 @@ def register():
             return jsonify({'error': 'An account with this email already exists'}), 409
 
         # Create faculty user (role always 'faculty' for self-registration)
-        user = User(name=name, email=email, role='faculty')
+        user = User(name=name, email=email, role='faculty', department=department)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()

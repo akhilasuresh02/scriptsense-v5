@@ -123,6 +123,37 @@ def delete_subject(subject_id):
         return jsonify({'error': str(e)}), 500
 
 
+@subject_bp.route('/<int:subject_id>', methods=['PUT'])
+def update_subject(subject_id):
+    """Update subject name, class name, and academic year."""
+    try:
+        subject = Subject.query.get_or_404(subject_id)
+        data = request.json
+
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'Subject name is required'}), 400
+
+        subject.name = name
+        if 'className' in data:
+            subject.class_name = (data['className'] or '').strip() or None
+        if 'academicYear' in data:
+            subject.academic_year = (data['academicYear'] or '').strip() or None
+
+        db.session.commit()
+        print(f"✅ Updated subject {subject_id}: {subject.name}")
+
+        return jsonify({
+            'message': 'Subject updated successfully',
+            'subject': subject.to_dict()
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error updating subject: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 @subject_bp.route('/<int:subject_id>/assign-evaluators', methods=['PUT'])
 def assign_evaluators(subject_id):
     """Assign or reassign first and second evaluators to a subject.

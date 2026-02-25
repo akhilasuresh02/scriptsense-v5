@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-    BookOpen, FileText, CheckCircle, LogOut,
-    AlertCircle, X, Send, Eye, EyeOff
+    BookOpen, FileText, LogOut,
+    AlertCircle, X, Send, EyeOff
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { getExternalSubjects, getExternalScripts, submitExternalMarks } from '../services/api';
+import { getExternalSubjects, getExternalScripts } from '../services/api';
 
 const STATUS_BADGE = {
     FIRST_DONE: { label: 'Ready for 2nd Eval', color: 'bg-yellow-900/50 text-yellow-300 border-yellow-700/50' },
@@ -22,13 +22,6 @@ export default function ExternalDashboard() {
     const [loading, setLoading] = useState(true);
     const [scriptsLoading, setScriptsLoading] = useState(false);
     const [error, setError] = useState('');
-
-    // Marks submission modal
-    const [markModal, setMarkModal] = useState(null);
-    const [markValue, setMarkValue] = useState('');
-    const [markRemarks, setMarkRemarks] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-    const [submitSuccess, setSubmitSuccess] = useState('');
 
     useEffect(() => {
         loadSubjects();
@@ -57,39 +50,6 @@ export default function ExternalDashboard() {
             setError(err.response?.data?.error || 'Failed to load scripts');
         } finally {
             setScriptsLoading(false);
-        }
-    };
-
-    const openMarkModal = (script) => {
-        setMarkModal(script);
-        setMarkValue(script.external_marks !== null && script.external_marks !== undefined ? String(script.external_marks) : '');
-        setMarkRemarks('');
-        setSubmitSuccess('');
-    };
-
-    const handleSubmitMarks = async (e) => {
-        e.preventDefault();
-        if (!markValue || isNaN(parseFloat(markValue))) {
-            setError('Please enter a valid mark.');
-            return;
-        }
-        setSubmitting(true);
-        try {
-            const result = await submitExternalMarks(markModal.id, parseFloat(markValue), markRemarks, user?.id);
-            setSubmitSuccess(`Marks saved! Final: ${result.script.final_marks}`);
-            setScripts(prev => prev.map(s =>
-                s.id === markModal.id
-                    ? { ...s, external_marks: parseFloat(markValue), final_marks: result.script.final_marks, status: result.script.status }
-                    : s
-            ));
-            setTimeout(() => {
-                setMarkModal(null);
-                setSubmitSuccess('');
-            }, 1800);
-        } catch (err) {
-            setError(err.response?.data?.error || 'Failed to submit marks');
-        } finally {
-            setSubmitting(false);
         }
     };
 
@@ -236,13 +196,22 @@ export default function ExternalDashboard() {
                                                     )}
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => openMarkModal(script)}
-                                                className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
-                                            >
-                                                <Send className="w-3 h-3" />
-                                                {script.external_marks !== null ? 'Update Marks' : 'Enter Marks'}
-                                            </button>
+                                            {script.external_marks !== null && script.external_marks !== undefined ? (
+                                                <span className="flex items-center gap-1.5 bg-green-900/40 text-green-300 border border-green-700/50 text-xs px-3 py-1.5 rounded-lg font-medium">
+                                                    ✓ Evaluated
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        sessionStorage.setItem('evaluateFrom', '/external');
+                                                        navigate(`/evaluate/${script.id}`);
+                                                    }}
+                                                    className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <Send className="w-3 h-3" />
+                                                    Evaluate
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -251,80 +220,6 @@ export default function ExternalDashboard() {
                     )}
                 </div>
             </div>
-
-            {/* Marks Modal */}
-            {markModal && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-sm shadow-2xl">
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="font-semibold text-white">Submit External Marks</h3>
-                            <button onClick={() => setMarkModal(null)} className="text-gray-400 hover:text-white">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <p className="text-sm text-gray-400 mb-1">
-                            Student: <span className="text-white">{markModal.student_name}</span>
-                        </p>
-                        <p className="text-xs text-purple-400 mb-4 flex items-center gap-1">
-                            <EyeOff className="w-3 h-3" />
-                            First evaluator marks are hidden for independent assessment
-                        </p>
-
-                        {submitSuccess ? (
-                            <div className="flex items-center gap-2 text-green-300 py-4 justify-center">
-                                <CheckCircle className="w-5 h-5" />
-                                {submitSuccess}
-                            </div>
-                        ) : (
-                            <form onSubmit={handleSubmitMarks} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm text-gray-300 mb-1">Marks *</label>
-                                    <input
-                                        type="number"
-                                        step="0.5"
-                                        min="0"
-                                        value={markValue}
-                                        onChange={e => setMarkValue(e.target.value)}
-                                        placeholder="e.g., 80"
-                                        className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
-                                        required
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-gray-300 mb-1">Remarks (optional)</label>
-                                    <textarea
-                                        value={markRemarks}
-                                        onChange={e => setMarkRemarks(e.target.value)}
-                                        placeholder="Any comments..."
-                                        rows={2}
-                                        className="w-full bg-gray-800 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-none"
-                                    />
-                                </div>
-                                <div className="flex gap-3">
-                                    <button
-                                        type="button"
-                                        onClick={() => setMarkModal(null)}
-                                        className="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-300 py-2.5 rounded-lg transition-colors"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={submitting}
-                                        className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:bg-purple-800 text-white py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
-                                    >
-                                        {submitting ? (
-                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                        ) : (
-                                            <><Send className="w-4 h-4" /> Submit</>
-                                        )}
-                                    </button>
-                                </div>
-                            </form>
-                        )}
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

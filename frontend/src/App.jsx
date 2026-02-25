@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import HomePage from './pages/HomePage';
+import LandingPage from './pages/LandingPage';
 import EvaluationPage from './pages/EvaluationPage';
 import SubjectsPage from './pages/SubjectsPage';
 import ResultsPage from './pages/ResultsPage';
@@ -18,11 +19,11 @@ import ExternalDashboard from './pages/ExternalDashboard';
 // NEW: Auth guard
 import ProtectedRoute from './components/ProtectedRoute';
 
-/** Smart landing: unauthenticated → /login, authenticated → role dashboard */
+/** Smart landing: unauthenticated → landing page, authenticated → role dashboard */
 function RootRedirect() {
     const { isAuthenticated, role, loading } = useAuth();
     if (loading) return null; // wait for localStorage restore
-    if (!isAuthenticated) return <Navigate to="/login" replace />;
+    if (!isAuthenticated) return <Navigate to="/landing" replace />;
     if (role === 'custodian') return <Navigate to="/custodian" replace />;
     return <Navigate to="/teacher" replace />;
 }
@@ -43,8 +44,9 @@ function App() {
     return (
         <div className="min-h-screen">
             <Routes>
-                {/* ── Public routes (existing) ─────────────────────────── */}
+                {/* ── Public routes ───────────────────────────────────── */}
                 <Route path="/" element={<RootRedirect />} />
+                <Route path="/landing" element={<LandingPage />} />
                 <Route path="/home" element={<HomePage />} />
                 <Route path="/subjects" element={<SubjectsPage />} />
                 <Route path="/results" element={<ResultsPage />} />

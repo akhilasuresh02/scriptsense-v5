@@ -189,16 +189,22 @@ export default function TeacherDashboard() {
                                                     )}
                                                 </div>
                                             </div>
-                                            <button
-                                                onClick={() => {
-                                                    sessionStorage.setItem('evaluateFrom', '/teacher');
-                                                    navigate(`/evaluate/${script.id}`);
-                                                }}
-                                                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
-                                            >
-                                                <Send className="w-3 h-3" />
-                                                {script.teacher_marks !== null && script.teacher_marks !== undefined ? 'Re-evaluate' : 'Evaluate'}
-                                            </button>
+                                            {script.teacher_marks !== null && script.teacher_marks !== undefined ? (
+                                                <span className="flex items-center gap-1.5 bg-green-900/40 text-green-300 border border-green-700/50 text-xs px-3 py-1.5 rounded-lg font-medium">
+                                                    ✓ Evaluated
+                                                </span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => {
+                                                        sessionStorage.setItem('evaluateFrom', '/teacher');
+                                                        navigate(`/evaluate/${script.id}`);
+                                                    }}
+                                                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs px-3 py-1.5 rounded-lg transition-colors"
+                                                >
+                                                    <Send className="w-3 h-3" />
+                                                    Evaluate
+                                                </button>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

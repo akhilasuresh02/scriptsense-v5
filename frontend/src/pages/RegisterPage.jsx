@@ -6,7 +6,7 @@ import { registerFaculty } from '../services/api';
 export default function RegisterPage() {
     const navigate = useNavigate();
 
-    const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+    const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '', department: '' });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -35,7 +35,7 @@ export default function RegisterPage() {
 
         setLoading(true);
         try {
-            await registerFaculty(name, email, password);
+            await registerFaculty(name, email, password, form.department.trim() || undefined);
             setSuccess(true);
             setTimeout(() => navigate('/login'), 2500);
         } catch (err) {
@@ -111,6 +111,19 @@ export default function RegisterPage() {
                                             className="w-full bg-gray-800 border border-gray-600 rounded-lg pl-10 pr-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-300 mb-1.5">Department <span className="text-gray-500 font-normal">(optional)</span></label>
+                                    <input
+                                        id="reg-department"
+                                        type="text"
+                                        name="department"
+                                        value={form.department}
+                                        onChange={handleChange}
+                                        placeholder="e.g., Computer Science"
+                                        className="w-full bg-gray-800 border border-gray-600 rounded-lg px-4 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                                    />
                                 </div>
 
                                 <div>

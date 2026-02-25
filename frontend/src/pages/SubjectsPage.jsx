@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
     FolderOpen, Plus, Trash2, Users, FileText, Folder, FilePlus,
     ChevronRight, ChevronDown, Search, Download, Eye,
@@ -32,6 +32,21 @@ const SubjectsPage = () => {
     const [loadingResults, setLoadingResults] = useState(false);
     const [resultsSearch, setResultsSearch] = useState('');
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    // Auto-select subject from URL param (e.g. /subjects?subjectId=3)
+    useEffect(() => {
+        const subjectId = searchParams.get('subjectId');
+        if (subjectId && subjects.length > 0) {
+            const found = subjects.find(s => String(s.id) === String(subjectId));
+            if (found) {
+                handleSubjectClick(found);
+            } else {
+                // Subject not in list yet – load details directly
+                loadSubjectDetails(Number(subjectId));
+            }
+        }
+    }, [subjects, searchParams.get('subjectId')]);
 
     useEffect(() => {
         loadSubjects();
@@ -164,21 +179,22 @@ const SubjectsPage = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-purple-900 p-4 md:p-8">
+        <div className="min-h-screen bg-gray-950 text-white p-4 md:p-8">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-8">
-                    <div>
-                        <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Subjects</h1>
-                        <p className="text-gray-300">Manage evaluation subjects and classes</p>
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={() => navigate('/custodian')}
+                            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+                        >
+                            ← Back to Dashboard
+                        </button>
+                        <div>
+                            <h1 className="text-3xl md:text-4xl font-bold text-white mb-2">Subjects</h1>
+                            <p className="text-gray-300">Manage evaluation subjects and classes</p>
+                        </div>
                     </div>
-                    <button
-                        onClick={() => setShowCreateModal(true)}
-                        className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-                    >
-                        <Plus className="w-5 h-5" />
-                        New Subject
-                    </button>
                 </div>
 
                 {/* Subjects Content Area */}
@@ -264,6 +280,11 @@ const SubjectsPage = () => {
                                                     </span>
                                                 </h1>
                                                 <p className="text-gray-400 mt-1">{selectedSubject.academic_year || 'No Academic Year'}</p>
+                                                {selectedSubject.first_evaluator_name && (
+                                                    <p className="text-sm text-green-400 mt-1">
+                                                        👤 Teacher: <span className="font-semibold">{selectedSubject.first_evaluator_name}</span>
+                                                    </p>
+                                                )}
                                             </div>
                                             <div className="flex gap-2">
                                                 <button
@@ -397,14 +418,14 @@ const SubjectsPage = () => {
                                                             files.answer_sheets.map(sheet => (
                                                                 <div
                                                                     key={sheet.id}
-                                                                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 border border-white/10 rounded-xl hover:border-blue-500/30 transition-all group gap-4"
+                                                                    className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-white/5 border border-white/10 rounded-xl hover:border-gray-600/50 transition-all group gap-4"
                                                                 >
-                                                                    <div className="flex items-center gap-4 cursor-pointer min-w-0 flex-1" onClick={() => navigate(`/evaluate/${sheet.id}`)}>
+                                                                    <div className="flex items-center gap-4 min-w-0 flex-1">
                                                                         <div className={`shrink-0 p-2 rounded-lg ${sheet.status === 'evaluated' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'}`}>
                                                                             {sheet.status === 'evaluated' ? <CheckCircle className="w-5 h-5" /> : <Clock className="w-5 h-5" />}
                                                                         </div>
                                                                         <div className="min-w-0">
-                                                                            <h4 className="font-semibold text-white group-hover:text-blue-400 transition-colors truncate">
+                                                                            <h4 className="font-semibold text-white truncate">
                                                                                 {sheet.student_name}
                                                                             </h4>
                                                                             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-gray-400 mt-1">
@@ -415,14 +436,8 @@ const SubjectsPage = () => {
                                                                     </div>
                                                                     <div className="flex items-center gap-2 shrink-0 sm:ml-4">
                                                                         <button
-                                                                            onClick={() => navigate(`/evaluate/${sheet.id}`)}
-                                                                            className="flex-1 sm:flex-none px-4 py-2 bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 rounded-lg text-xs font-bold transition-all border border-blue-500/20 whitespace-nowrap min-h-[36px]"
-                                                                        >
-                                                                            Evaluate
-                                                                        </button>
-                                                                        <button
                                                                             onClick={() => handleDeleteFile(sheet.id, 'answer')}
-                                                                            className="p-2 text-gray-500 hover:text-red-400 transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                                                                            className="p-2 text-gray-500 hover:text-red-400 transition-all"
                                                                         >
                                                                             <Trash2 className="w-4 h-4" />
                                                                         </button>
@@ -667,7 +682,7 @@ const SubjectsPage = () => {
                     </div>
                 )}
             </div>
-        </div>
+        </div >
     );
 };
 

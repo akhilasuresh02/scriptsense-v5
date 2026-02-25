@@ -22,6 +22,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(500), nullable=False)
     # role: 'custodian' or 'faculty'
     role = db.Column(db.String(50), nullable=False, default='faculty')
+    department = db.Column(db.String(200), nullable=True)  # Faculty department
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def set_password(self, password: str):
@@ -43,6 +44,7 @@ class User(db.Model):
             'name': self.name,
             'email': self.email,
             'role': self.role,
+            'department': self.department,
             'created_at': self.created_at.isoformat()
         }
 
