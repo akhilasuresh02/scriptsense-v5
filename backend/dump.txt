@@ -1,0 +1,41 @@
+﻿--- Questions ---
+QP:1 QNum:Q1. Text:(4 Marks) Classify cryptographic techniques and ex
+QP:1 QNum:Q2. Text:(3 Marks) Explain the purpose of the Initial Permu
+QP:1 QNum:Q3. Text:(3 Marks) Describe how the 64-bit plaintext is div
+QP:1 QNum:Q4. Text:(6 Marks) Explain one complete round of DES, inclu
+QP:1 QNum:Q5. Text:(4 Marks) Explain the key generation process in DE
+QP:2 QNum:Q1. Text:(4 Marks) Classify cryptographic techniques and ex
+QP:2 QNum:Q2. Text:(3 Marks) Explain the purpose of the Initial Permu
+QP:2 QNum:Q3. Text:(3 Marks) Describe how the 64-bit plaintext is div
+QP:2 QNum:Q4. Text:(6 Marks) Explain one complete round of DES, inclu
+QP:2 QNum:Q5. Text:(4 Marks) Explain the key generation process in DE
+QP:3 QNum:Q1. Text:| Illustrate the key Object-Oriented Programming c
+QP:3 QNum:Q2. Text:| Examine inheritance, method overriding, dynamic 
+QP:3 QNum:Q3. Text:| Analyze the structure and behavior of a generic 
+QP:3 QNum:Q4. Text:Evaluate the effectiveness of different multithrea
+QP:3 QNum:Q5. Text:Elaborate how command-line arguments are processed
+--- Rubrics ---
+Rubric:1 QNum:Q1. Text:Classification of Cryptography (4 Marks)
+Cryptogra
+Rubric:1 QNum:Q2. Text:Initial Permutation (3 Marks)
+Initial Permutation 
+Rubric:1 QNum:Q3. Text:Division and Feistel Structure (3 Marks)
+After Ini
+Rubric:1 QNum:Q4. Text:One Complete Round of DES (6 Marks)
+Expansion Perm
+Rubric:1 QNum:Q5. Text:Key Generation and Security (4 Marks)
+DES uses a 6
+Rubric:2 QNum:Q1. Text:Classification of Cryptography (4 Marks)
+Cryptogra
+Rubric:2 QNum:Q2. Text:Initial Permutation (3 Marks)
+Initial Permutation 
+Rubric:2 QNum:Q3. Text:Division and Feistel Structure (3 Marks)
+After Ini
+Rubric:2 QNum:Q4. Text:One Complete Round of DES (6 Marks)
+Expansion Perm
+Rubric:2 QNum:Q5. Text:Key Generation and Security (4 Marks)
+DES uses a 6
+Rubric:3 QNum:Q5. Text:Command-line arguments provide a way to supply inp
+Rubric:3 QNum:Q1. Text:Threads enter a waiting or blocked state. Once the
+Rubric:3 QNum:Q2. Text:Generics are used in Java to design classes and me
+Rubric:3 QNum:Q3. Text:Multithreading allows a program to execute multipl

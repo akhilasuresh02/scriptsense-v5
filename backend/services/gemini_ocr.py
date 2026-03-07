@@ -171,7 +171,8 @@ class GeminiOCRService:
                   "description": "Short description of what the diagram represents",
                   "bounding_box": [ymin, xmin, ymax, xmax] 
                 }
-              ]
+              ],
+              "answer_numbers": [1, 2, 3]
             }
 
             CRITICAL FOR DIAGRAMS:
@@ -186,7 +187,13 @@ class GeminiOCRService:
                - Look for question numbers (e.g., '1.', 'Q1', '2a', '3)', '(a)') in the left margin or start of lines.
                - IMPORTANT: Start the corresponding text block with specific bold labels like '**Q1.**', '**Q2(a).**', etc.
                - Ensure every answer block is clearly associated with its question identifier if visible.
-            9. Return ONLY the JSON object. No other text."""
+            9. ANSWER LABELS (CRITICAL):
+               - Look for answer labels written as "ans1:", "ans 1:", "Ans2:", "ANS3:", "answer 1:", "Answer2:", "ans1.", "Ans 1)", etc.
+               - These mark where a student's answer to a particular question begins.
+               - Extract the numeric part from each label found (e.g., "ans1:" → 1, "Ans 3:" → 3).
+               - Include them in the JSON output as "answer_numbers": [1, 3, ...] (sorted, unique integers).
+               - If no such labels are found, return "answer_numbers": [].
+            10. Return ONLY the JSON object. No other text."""
             
             # Using JSON mode if supported
             try:
@@ -251,10 +258,22 @@ class GeminiOCRService:
                     except Exception as parse_e:
                         print(f"Error parsing question blocks: {parse_e}")
 
+                    # Extract answer_numbers from Gemini response
+                    answer_numbers = result.get('answer_numbers', [])
+                    
+                    # Fallback: also detect answer labels via regex on transcription text
+                    ans_pattern = re.findall(r'(?i)\bans(?:wer)?\s*(\d+)\s*[:.)]', transcription_text)
+                    if ans_pattern:
+                        regex_nums = sorted(set(int(n) for n in ans_pattern))
+                        # Merge with Gemini-detected ones
+                        merged = sorted(set(answer_numbers) | set(regex_nums))
+                        answer_numbers = merged
+                    
                     return {
                         'transcription': transcription_text,
                         'questions': questions,
                         'diagrams': result.get('diagrams', []),
+                        'answer_numbers': answer_numbers,
                         'success': True
                     }
                 except json.JSONDecodeError as je:
@@ -284,6 +303,94 @@ class GeminiOCRService:
                 'diagrams': [],
                 'success': False
             }
+
+    def analyze_answer_key_page(self, image_data, is_path=True):
+        """
+        Analyze a page of an answer key / rubric / marking scheme to extract per-question criteria.
+        Uses a specialised prompt that understands answer key formats (printed/typed text,
+        numbered answers, marking schemes, etc.) rather than handwritten student answers.
+        
+        Returns:
+            dict with 'questions': [{'id': 'Q1.', 'content': '...'}, ...] and 'success': bool
+        """
+        try:
+            if is_path:
+                image = Image.open(image_data)
+            else:
+                image = image_data
+
+            prompt = """Analyze this image of an answer key, marking scheme, or evaluation rubric for an academic exam.
+
+            GOAL: Extract each question's model answer or evaluation criteria separately.
+
+            Return the result in a valid JSON format:
+            {
+              "questions": [
+                {
+                  "id": "Q1.",
+                  "content": "The full model answer or evaluation criteria for this question"
+                },
+                {
+                  "id": "Q2.",
+                  "content": "..."
+                }
+              ]
+            }
+
+            CRITICAL INSTRUCTIONS:
+            1. Look for question/answer markers in ANY format:
+               - "Q1", "Q2", "Question 1", "Ans 1", "Answer 1", "1.", "1)", "(1)", "Q1.", etc.
+               - The document may use "Ans 1:", "Answer 2:", or simply numbered sections.
+            2. Extract the COMPLETE answer/criteria text for each question until the next question begins.
+            3. Preserve mathematical symbols and notations.
+            4. Fix obvious spelling errors but preserve technical meaning.
+            5. If a question spans multiple sections on the page, combine them.
+            6. CRITICAL: Extract the ACTUAL question number written in the document (e.g. if it says "Ans 4:", the ID must be "Q4."). DO NOT simply number the answers sequentially (1, 2, 3...). 
+            7. Normalise the question IDs to a consistent format like "Q1.", "Q2.", "Q3.", etc.
+               For sub-parts use "Q1a.", "Q1b.", etc.
+            8. If no distinct questions are found, return "questions": [].
+            9. Return ONLY the JSON object. No other text."""
+
+            try:
+                response = self._generate_content_with_retry(
+                    [prompt, image],
+                    config={"response_mime_type": "application/json"}
+                )
+            except Exception as config_err:
+                print(f"⚠️ JSON mode not supported: {config_err}. Falling back to standard text.")
+                response = self._generate_content_with_retry([prompt, image])
+
+            if not response or not response.text:
+                return {'questions': [], 'success': False, 'error': 'Empty response from Gemini'}
+
+            import json, re
+            text = response.text
+            print(f"DEBUG_ANSWER_KEY_RAW: {text[:500]}")
+
+            # Cleanup markdown code blocks
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+
+            if not text.startswith('{'):
+                json_match = re.search(r'(\{.*\})', text, re.DOTALL)
+                if json_match:
+                    text = json_match.group(1)
+
+            try:
+                result = json.loads(text)
+                return {
+                    'questions': result.get('questions', []),
+                    'success': True
+                }
+            except json.JSONDecodeError as je:
+                print(f"Answer key JSON parse failed: {text[:200]}...")
+                return {'questions': [], 'success': False, 'error': str(je)}
+
+        except Exception as e:
+            print(f"Error in answer key analysis: {str(e)}")
+            return {'questions': [], 'success': False, 'error': str(e)}
 
     def process_pdf_region(self, image_data, coordinates=None):
         """

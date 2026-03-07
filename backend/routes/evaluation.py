@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify
-from models import db, Mark, AnswerSheet, QuestionPaper, QuestionContent, RubricContent, EvaluationRubric
+from models import db, Mark, AnswerSheet, QuestionPaper, QuestionContent, RubricContent, EvaluationRubric, PageScan
 from services.gemini_ocr import GeminiOCRService
 from services.pdf_processor import PDFProcessor
 import base64
 import io
+import json
 
 evaluation_bp = Blueprint('evaluation', __name__)
 
@@ -12,7 +13,8 @@ ocr_service = GeminiOCRService()
 
 @evaluation_bp.route('/auto-scan', methods=['POST'])
 def auto_scan():
-    """Automatically scan a full page for transcription and diagrams"""
+    """Automatically scan a full page for transcription and diagrams.
+    Returns cached data from PageScan if available."""
     try:
         data = request.json
         answer_sheet_id = data.get('answersheetId')
@@ -20,19 +22,35 @@ def auto_scan():
         
         print(f"🔍 Auto-scan request: ID={answer_sheet_id}, Page={page_number}")
         
-        # Get answer sheet
+        # Check cache first
+        cached = PageScan.query.filter_by(
+            answer_sheet_id=answer_sheet_id,
+            page_number=page_number
+        ).first()
+        
+        if cached:
+            print(f"⚡ Using cached scan for page {page_number}")
+            cached_data = cached.to_dict()
+            return jsonify({
+                'transcription': cached_data['transcription'] or '',
+                'questions': cached_data['questions'],
+                'diagrams': cached_data['diagrams'],
+                'answer_numbers': cached_data['answer_numbers'],
+                'success': True,
+                'cached': True
+            }), 200
+        
+        # No cache — perform live scan
         answer_sheet = AnswerSheet.query.get_or_404(answer_sheet_id)
         
-        # Convert full page to image (Medium res for memory safety on production)
         print(f"📄 Processing PDF: {answer_sheet.file_path}")
         image = PDFProcessor.pdf_page_to_image(
             answer_sheet.file_path,
             page_number,
-            zoom=2.0 # Reduced from 3.0 for production stability
+            zoom=2.0
         )
         print(f"🖼️ Full page image generated: {image.size}")
         
-        # Perform automatic analysis
         print(f"🤖 Sending to Gemini...")
         result = ocr_service.auto_analyze_page(image, is_path=False)
         print(f"✅ Gemini response received. success={result.get('success')}")
@@ -40,7 +58,7 @@ def auto_scan():
         # Process detected diagrams
         processed_diagrams = []
         for i, diag in enumerate(result.get('diagrams', [])):
-            bbox = diag.get('bounding_box') # [ymin, xmin, ymax, xmax] in 0-1000
+            bbox = diag.get('bounding_box')
             if bbox and len(bbox) == 4:
                 norm_coords = {
                     'y': bbox[0] / 1000.0,
@@ -68,11 +86,32 @@ def auto_scan():
                 except Exception as ex:
                     print(f"⚠️ Failed to extract diagram {i+1}: {ex}")
         
+        answer_numbers = result.get('answer_numbers', [])
+        questions = result.get('questions', [])
+        
+        # Cache the result in PageScan
+        try:
+            page_scan = PageScan(
+                answer_sheet_id=answer_sheet_id,
+                page_number=page_number,
+                transcription=result.get('transcription', ''),
+                questions_json=json.dumps(questions),
+                diagrams_json=json.dumps(processed_diagrams),
+                answer_numbers_json=json.dumps(answer_numbers)
+            )
+            db.session.merge(page_scan)
+            db.session.commit()
+        except Exception as cache_err:
+            print(f"⚠️ Failed to cache scan: {cache_err}")
+            db.session.rollback()
+        
         return jsonify({
             'transcription': result.get('transcription', ''),
-            'questions': result.get('questions', []),
+            'questions': questions,
             'diagrams': processed_diagrams,
+            'answer_numbers': answer_numbers,
             'success': result.get('success', False),
+            'cached': False,
             'error': result.get('error') if not result.get('success') else None
         }), 200
         
@@ -617,7 +656,11 @@ def match_content(answer_sheet_id):
         # Get associated question paper ID
         question_paper_id = answer_sheet.question_paper_id
         if not question_paper_id:
-            return jsonify({'error': 'No question paper associated with this answer sheet', 'success': False}), 400
+            return jsonify({
+                'success': True, 
+                'matches': [],
+                'warning': 'No question paper associated'
+            }), 200
         
         # Get all question contents for this question paper
         questions = QuestionContent.query.filter_by(question_paper_id=question_paper_id).all()
@@ -687,6 +730,14 @@ def scan_all_pages():
         total_pages = PDFProcessor.get_page_count(doc.file_path)
         print(f"📄 Total pages: {total_pages}")
         
+        # CLEAR EXISTING DATA FIRST TO AVOID STALE OR MISNUMBERED MAPPINGS
+        if doc_type == 'question_paper':
+            QuestionContent.query.filter_by(question_paper_id=doc_id).delete()
+        elif doc_type == 'rubric':
+            RubricContent.query.filter_by(rubric_id=doc_id).delete()
+        db.session.commit()
+        print(f"🧹 Cleared existing data for {doc_type} {doc_id} before re-scan")
+        
         total_stored = 0
         
         for page_number in range(total_pages):
@@ -695,14 +746,19 @@ def scan_all_pages():
             # Convert page to image
             image = PDFProcessor.pdf_page_to_image(doc.file_path, page_number, zoom=2.0)
             
-            # Analyze with Gemini
-            result = ocr_service.auto_analyze_page(image, is_path=False)
+            # Use dedicated method for rubrics/answer keys vs generic for question papers
+            if doc_type == 'rubric':
+                result = ocr_service.analyze_answer_key_page(image, is_path=False)
+                questions = result.get('questions', [])
+                success = result.get('success', False)
+            else:
+                result = ocr_service.auto_analyze_page(image, is_path=False)
+                questions = result.get('questions', [])
+                success = result.get('success', False)
             
-            if not result.get('success'):
+            if not success:
                 print(f"⚠️ Failed to analyze page {page_number + 1}")
                 continue
-            
-            questions = result.get('questions', [])
             
             for q in questions:
                 q_number = q.get('id', '').strip()
@@ -814,6 +870,220 @@ def get_rubric_contents(rubric_id):
         
     except Exception as e:
         return jsonify({'error': str(e), 'success': False}), 500
+
+
+@evaluation_bp.route('/prescan-all', methods=['POST'])
+def prescan_all():
+    """Pre-scan all pages of an answer sheet and cache results in PageScan table"""
+    try:
+        data = request.json
+        answer_sheet_id = data.get('answersheetId')
+
+        if not answer_sheet_id:
+            return jsonify({'error': 'Missing answersheetId', 'success': False}), 400
+
+        answer_sheet = AnswerSheet.query.get_or_404(answer_sheet_id)
+
+        # Check if already scanned
+        if answer_sheet.scan_status == 'scanned':
+            scans = PageScan.query.filter_by(
+                answer_sheet_id=answer_sheet_id
+            ).order_by(PageScan.page_number).all()
+            return jsonify({
+                'success': True,
+                'status': 'already_scanned',
+                'total_pages': len(scans),
+                'pages': [s.to_dict() for s in scans]
+            }), 200
+
+        # Mark as scanning
+        answer_sheet.scan_status = 'scanning'
+        db.session.commit()
+
+        total_pages = PDFProcessor.get_page_count(answer_sheet.file_path)
+        print(f"📖 Pre-scanning all {total_pages} pages for answer sheet {answer_sheet_id}")
+
+        scanned_pages = []
+
+        for page_number in range(total_pages):
+            # Check if already cached
+            existing = PageScan.query.filter_by(
+                answer_sheet_id=answer_sheet_id,
+                page_number=page_number
+            ).first()
+
+            if existing:
+                print(f"⚡ Page {page_number} already cached, skipping")
+                scanned_pages.append(existing.to_dict())
+                continue
+
+            print(f"🔍 Scanning page {page_number + 1}/{total_pages}...")
+
+            try:
+                image = PDFProcessor.pdf_page_to_image(
+                    answer_sheet.file_path,
+                    page_number,
+                    zoom=2.0
+                )
+
+                result = ocr_service.auto_analyze_page(image, is_path=False)
+
+                if not result.get('success'):
+                    print(f"⚠️ Page {page_number} scan failed")
+                    page_scan = PageScan(
+                        answer_sheet_id=answer_sheet_id,
+                        page_number=page_number,
+                        transcription='',
+                        questions_json='[]',
+                        diagrams_json='[]',
+                        answer_numbers_json='[]'
+                    )
+                else:
+                    # Process diagrams
+                    processed_diagrams = []
+                    for i, diag in enumerate(result.get('diagrams', [])):
+                        bbox = diag.get('bounding_box')
+                        if bbox and len(bbox) == 4:
+                            norm_coords = {
+                                'y': bbox[0] / 1000.0,
+                                'x': bbox[1] / 1000.0,
+                                'height': (bbox[2] - bbox[0]) / 1000.0,
+                                'width': (bbox[3] - bbox[1]) / 1000.0
+                            }
+                            try:
+                                diag_image = PDFProcessor.extract_region(
+                                    answer_sheet.file_path,
+                                    page_number,
+                                    norm_coords
+                                )
+                                img_buffer = io.BytesIO()
+                                diag_image.save(img_buffer, format='PNG')
+                                diag_img_base64 = base64.b64encode(img_buffer.getvalue()).decode('utf-8')
+                                processed_diagrams.append({
+                                    'description': diag.get('description', 'Diagram'),
+                                    'image': f"data:image/png;base64,{diag_img_base64}"
+                                })
+                            except Exception as ex:
+                                print(f"⚠️ Diagram extraction failed: {ex}")
+
+                    page_scan = PageScan(
+                        answer_sheet_id=answer_sheet_id,
+                        page_number=page_number,
+                        transcription=result.get('transcription', ''),
+                        questions_json=json.dumps(result.get('questions', [])),
+                        diagrams_json=json.dumps(processed_diagrams),
+                        answer_numbers_json=json.dumps(result.get('answer_numbers', []))
+                    )
+
+                db.session.add(page_scan)
+                db.session.commit()
+                scanned_pages.append(page_scan.to_dict())
+
+            except Exception as page_err:
+                print(f"❌ Error scanning page {page_number}: {page_err}")
+                db.session.rollback()
+                scanned_pages.append({
+                    'page_number': page_number,
+                    'transcription': '',
+                    'questions': [],
+                    'diagrams': [],
+                    'answer_numbers': [],
+                    'error': str(page_err)
+                })
+
+        # Mark as scanned
+        answer_sheet.scan_status = 'scanned'
+        db.session.commit()
+
+        print(f"✅ Pre-scan complete for answer sheet {answer_sheet_id}: {total_pages} pages")
+
+        return jsonify({
+            'success': True,
+            'status': 'scanned',
+            'total_pages': total_pages,
+            'pages': scanned_pages
+        }), 200
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error in prescan-all: {str(e)}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@evaluation_bp.route('/prescan-data/<int:answer_sheet_id>', methods=['GET'])
+def get_prescan_data(answer_sheet_id):
+    """Get all pre-scanned data for an answer sheet, with answers segmented by number"""
+    try:
+        import re
+        answer_sheet = AnswerSheet.query.get_or_404(answer_sheet_id)
+
+        scans = PageScan.query.filter_by(
+            answer_sheet_id=answer_sheet_id
+        ).order_by(PageScan.page_number).all()
+
+        pages = [s.to_dict() for s in scans]
+
+        # Build answer segments: group transcription text by answer number
+        answer_segments = {}
+
+        for page_data in pages:
+            text = page_data.get('transcription', '') or ''
+            ans_nums = page_data.get('answer_numbers', [])
+            page_num = page_data.get('page_number', 0)
+
+            if not ans_nums:
+                if 'unassigned' not in answer_segments:
+                    answer_segments['unassigned'] = []
+                if text.strip():
+                    answer_segments['unassigned'].append({
+                        'page': page_num,
+                        'text': text
+                    })
+            else:
+                # Split text by answer labels
+                parts = re.split(r'(?i)\bans(?:wer)?\s*(\d+)\s*[:.)\-]', text)
+
+                if len(parts) > 1:
+                    if parts[0].strip():
+                        if 'unassigned' not in answer_segments:
+                            answer_segments['unassigned'] = []
+                        answer_segments['unassigned'].append({
+                            'page': page_num,
+                            'text': parts[0].strip()
+                        })
+                    for i in range(1, len(parts), 2):
+                        ans_num = int(parts[i])
+                        content = parts[i + 1].strip() if i + 1 < len(parts) else ''
+                        key = str(ans_num)
+                        if key not in answer_segments:
+                            answer_segments[key] = []
+                        if content:
+                            answer_segments[key].append({
+                                'page': page_num,
+                                'text': content
+                            })
+                else:
+                    key = str(ans_nums[0])
+                    if key not in answer_segments:
+                        answer_segments[key] = []
+                    if text.strip():
+                        answer_segments[key].append({
+                            'page': page_num,
+                            'text': text.strip()
+                        })
+
+        return jsonify({
+            'success': True,
+            'scan_status': answer_sheet.scan_status,
+            'total_pages': len(pages),
+            'pages': pages,
+            'answer_segments': answer_segments
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Error getting prescan data: {str(e)}")
+        return jsonify({'error': str(e), 'success': False}), 500
+
 
 @evaluation_bp.route('/analyze-blooms', methods=['POST'])
 def analyze_blooms():

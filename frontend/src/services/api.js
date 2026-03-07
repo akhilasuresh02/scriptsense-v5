@@ -312,6 +312,16 @@ export const analyzeBlooms = async (text) => {
     return response.data;
 };
 
+export const prescanAnswerSheet = async (answersheetId) => {
+    const response = await api.post('evaluate/prescan-all', { answersheetId });
+    return response.data;
+};
+
+export const getPrescanData = async (answersheetId) => {
+    const response = await api.get(`evaluate/prescan-data/${answersheetId}`);
+    return response.data;
+};
+
 // ── NEW: Auth API functions ───────────────────────────────────────────────────
 
 export const registerFaculty = async (name, email, password, department) => {

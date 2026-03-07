@@ -6,7 +6,7 @@ import TranscriptionPanel from '../components/TranscriptionPanel';
 import GradingPanel from '../components/GradingPanel';
 import DocumentModal from '../components/DocumentModal';
 import ZoomModal from '../components/ZoomModal';
-import { getFiles, getPdfInfo, zoomRegion, getSubjectStudents } from '../services/api';
+import { getFiles, getPdfInfo, zoomRegion, getSubjectStudents, prescanAnswerSheet } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const EvaluationPage = () => {
@@ -28,6 +28,10 @@ const EvaluationPage = () => {
     const [subjectStudents, setSubjectStudents] = useState([]);
     const [showStudentList, setShowStudentList] = useState(false);
     const [gradingProgress, setGradingProgress] = useState({ total: 0, graded: 0 });
+    const [detectedAnswerNumbers, setDetectedAnswerNumbers] = useState([]);
+    const [prescanStatus, setPrescanStatus] = useState('idle'); // idle, scanning, done
+    const [prescanPages, setPrescanPages] = useState({}); // { pageNum: scanData }
+
 
     // Warn on browser close/refresh if there are unmarked questions
     useEffect(() => {
@@ -74,8 +78,30 @@ const EvaluationPage = () => {
 
             const pdfInfo = await getPdfInfo(answersheetId);
             setTotalPages(pdfInfo.page_count);
+
+            // Trigger prescan
+            triggerPrescan();
         } catch (error) {
             console.error('Failed to load answer sheet:', error);
+        }
+    };
+
+    const triggerPrescan = async () => {
+        setPrescanStatus('scanning');
+        try {
+            const result = await prescanAnswerSheet(parseInt(answersheetId));
+            if (result.success) {
+                // Build page map
+                const pageMap = {};
+                (result.pages || []).forEach(p => {
+                    pageMap[p.page_number] = p;
+                });
+                setPrescanPages(pageMap);
+                setPrescanStatus('done');
+            }
+        } catch (err) {
+            console.error('Prescan failed:', err);
+            setPrescanStatus('idle');
         }
     };
 
@@ -173,6 +199,12 @@ const EvaluationPage = () => {
                         )}
                         <p className="text-[10px] md:text-sm text-gray-400">
                             Page {currentPage + 1} of {totalPages}
+                            {prescanStatus === 'scanning' && (
+                                <span className="ml-2 text-primary-400 animate-pulse">Pre-scanning...</span>
+                            )}
+                            {prescanStatus === 'done' && (
+                                <span className="ml-2 text-green-400">✓ Pre-scanned</span>
+                            )}
                         </p>
                     </div>
                 </div>
@@ -235,6 +267,8 @@ const EvaluationPage = () => {
                         page={currentPage}
                         region={selectedRegion}
                         onTranscriptionComplete={setTranscription}
+                        onAnswerNumbersDetected={setDetectedAnswerNumbers}
+                        prescanPageData={prescanPages[currentPage] || null}
                     />
                 </div>
 
@@ -248,6 +282,7 @@ const EvaluationPage = () => {
                         onViewQuestionPaper={() => setShowQuestionPaper(true)}
                         onViewRubric={() => setShowRubric(true)}
                         onGradingProgress={setGradingProgress}
+                        activeAnswerNumber={detectedAnswerNumbers.length > 0 ? detectedAnswerNumbers[0] : null}
                         evaluatorRole={
                             user?.id === answerSheet?.second_evaluator_id ? 'external' : 'teacher'
                         }

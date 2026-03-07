@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FileText, BookOpen, ChevronLeft, ChevronRight, Save, TrendingUp, CheckCircle, Plus, Loader, Search, AlertCircle } from 'lucide-react';
 import { saveMarks, getMarks, getTotalMarks, saveReport, getQuestionContents, getRubricContents, scanAllPages } from '../services/api';
 
-const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onViewQuestionPaper, onViewRubric, onGradingProgress, evaluatorRole = 'teacher' }) => {
+const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onViewQuestionPaper, onViewRubric, onGradingProgress, evaluatorRole = 'teacher', activeAnswerNumber }) => {
     const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
     const [marksAwarded, setMarksAwarded] = useState('');
     const [maxMarks, setMaxMarks] = useState('');
@@ -23,19 +23,22 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
     const [remarks, setRemarks] = useState('');
     const [evaluationComplete, setEvaluationComplete] = useState(false);
     const [submittingReport, setSubmittingReport] = useState(false);
+    const autoScannedRef = useRef(false);
 
-    // Auto-select first QP and rubric
+    // Auto-select correct QP and rubric based on subject
     useEffect(() => {
         if (questionPapers.length > 0 && !activeQuestionPaper) {
-            setActiveQuestionPaper(questionPapers[0]);
+            const matchedQP = questionPapers.find(qp => qp.subject_id === answerSheet?.subject_id);
+            setActiveQuestionPaper(matchedQP || questionPapers[0]);
         }
-    }, [questionPapers]);
+    }, [questionPapers, answerSheet]);
 
     useEffect(() => {
         if (rubrics.length > 0 && !activeRubric) {
-            setActiveRubric(rubrics[0]);
+            const matchedRubric = rubrics.find(r => r.subject_id === answerSheet?.subject_id);
+            setActiveRubric(matchedRubric || rubrics[0]);
         }
-    }, [rubrics]);
+    }, [rubrics, answerSheet]);
 
     // Load question/rubric content when selections change
     useEffect(() => {
@@ -50,6 +53,25 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
         }
     }, [activeRubric]);
 
+    // Auto-scan rubric if content is missing or incomplete
+    useEffect(() => {
+        if (autoScannedRef.current || scanning) return;
+        if (!activeQuestionPaper && !activeRubric) return;
+
+        // Wait for initial DB load to complete, then check
+        const timer = setTimeout(() => {
+            const needsRubricScan = activeRubric && rubricContents.length === 0;
+            const needsQPScan = activeQuestionPaper && questionContents.length === 0;
+            if (needsRubricScan || needsQPScan) {
+                console.log('🔄 Auto-scanning: rubric/QP content missing, triggering scan...');
+                autoScannedRef.current = true;
+                handleScanAll();
+            }
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [activeQuestionPaper, activeRubric, questionContents.length, rubricContents.length, scanning]);
+
     // Build merged question list whenever contents change
     useEffect(() => {
         const qNums = new Set();
@@ -58,10 +80,10 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
 
         // Sort by natural order: try numeric first, then string
         const sorted = [...qNums].sort((a, b) => {
-            const numA = parseFloat(a.replace(/[^0-9.]/g, ''));
-            const numB = parseFloat(b.replace(/[^0-9.]/g, ''));
+            const numA = parseFloat(String(a).replace(/[^0-9.]/g, ''));
+            const numB = parseFloat(String(b).replace(/[^0-9.]/g, ''));
             if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
-            return a.localeCompare(b);
+            return String(a).localeCompare(String(b));
         });
 
         setDetectedQuestions(sorted);
@@ -70,8 +92,8 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
         if (onGradingProgress) {
             const gradedNums = new Set(allMarks.map(m => String(m.question_number)));
             const graded = sorted.filter(q => {
-                const numOnly = q.replace(/[^0-9]/g, '');
-                return gradedNums.has(q) || gradedNums.has(numOnly);
+                const numOnly = String(q).replace(/[^0-9]/g, '');
+                return gradedNums.has(String(q)) || gradedNums.has(numOnly);
             }).length;
             onGradingProgress({ total: sorted.length, graded });
         }
@@ -90,8 +112,8 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
         if (!qNum) return;
 
         // Find saved marks for this question number (try exact match, then numeric)
-        const questionMarks = allMarks.find(m => String(m.question_number) === qNum)
-            || allMarks.find(m => String(m.question_number) === qNum.replace(/[^0-9]/g, ''));
+        const questionMarks = allMarks.find(m => String(m.question_number) === String(qNum))
+            || allMarks.find(m => String(m.question_number) === String(qNum).replace(/[^0-9]/g, ''));
 
         if (questionMarks) {
             setMarksAwarded(questionMarks.marks_awarded.toString());
@@ -107,6 +129,22 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
             }
         }
     }, [currentQuestionIdx, detectedQuestions, allMarks, rubricContents]);
+
+    // Auto-navigate when activeAnswerNumber changes (page turn detected new answer)
+    useEffect(() => {
+        if (activeAnswerNumber == null || detectedQuestions.length === 0) return;
+
+        const ansStr = String(activeAnswerNumber);
+        // Find matching question index
+        const idx = detectedQuestions.findIndex(q => {
+            const numOnly = String(q).replace(/[^0-9]/g, '');
+            return String(q) === ansStr || numOnly === ansStr;
+        });
+
+        if (idx !== -1 && idx !== currentQuestionIdx) {
+            setCurrentQuestionIdx(idx);
+        }
+    }, [activeAnswerNumber, detectedQuestions]);
 
     const loadQuestionContents = async (qpId) => {
         try {
@@ -154,6 +192,7 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
             console.error('Scan failed:', err);
             setScanStatus('Scan failed. Try again.');
         } finally {
+            setScanStatus(''); // ensure label clears
             setScanning(false);
         }
     };
@@ -224,7 +263,7 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
     const handleAddQuestion = () => {
         // Add a manual question number beyond detected ones
         const nextNum = detectedQuestions.length > 0
-            ? String(parseInt(detectedQuestions[detectedQuestions.length - 1].replace(/[^0-9]/g, '') || '0') + 1)
+            ? String(parseInt(String(detectedQuestions[detectedQuestions.length - 1]).replace(/[^0-9]/g, '') || '0') + 1)
             : '1';
         setDetectedQuestions(prev => [...prev, nextNum]);
         setCurrentQuestionIdx(detectedQuestions.length); // go to the newly added one
@@ -247,10 +286,25 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
         }
     };
 
-    // Current question data
+    // Current question data 
     const currentQNum = detectedQuestions[currentQuestionIdx] || '';
-    const currentQuestionText = questionContents.find(q => q.question_number === currentQNum)?.question_text;
-    const currentRubric = rubricContents.find(r => r.question_number === currentQNum);
+    const currentQNumStr = String(currentQNum);
+
+    // Normalize matching for robust question/rubric display
+    const currentQuestionText = questionContents.find(q => {
+        const qNumStr = String(q.question_number || '');
+        const qNumOnly = qNumStr.replace(/[^0-9]/g, '');
+        const currentQNumOnly = currentQNumStr.replace(/[^0-9]/g, '');
+        return qNumStr === currentQNumStr || (qNumOnly && qNumOnly === currentQNumOnly);
+    })?.question_text;
+
+    const currentRubric = rubricContents.find(r => {
+        const rNumStr = String(r.question_number || '');
+        const rNumOnly = rNumStr.replace(/[^0-9]/g, '');
+        const currentQNumOnly = currentQNumStr.replace(/[^0-9]/g, '');
+        return rNumStr === currentQNumStr || (rNumOnly && rNumOnly === currentQNumOnly);
+    });
+
     const totalQuestions = detectedQuestions.length || 1;
 
     if (evaluationComplete) {
@@ -465,18 +519,8 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
                         </div>
                     )}
 
-                    {/* Rubric Criteria Display */}
-                    {currentRubric && (
-                        <div className="mb-4 bg-white bg-opacity-5 rounded-lg border border-white border-opacity-10 overflow-hidden">
-                            <div className="bg-accent-500/10 px-3 py-1.5 border-b border-white border-opacity-5 flex items-center gap-1.5">
-                                <BookOpen className="w-3 h-3 text-accent-400" />
-                                <span className="text-[10px] uppercase tracking-wider font-bold text-accent-400">Evaluation Criteria</span>
-                            </div>
-                            <div className="p-3 text-sm leading-relaxed whitespace-pre-wrap max-h-32 overflow-auto custom-scrollbar">
-                                {currentRubric.criteria_text}
-                            </div>
-                        </div>
-                    )}
+
+
 
                     {/* No content hint */}
                     {!currentQuestionText && !currentRubric && detectedQuestions.length === 0 && !scanning && (

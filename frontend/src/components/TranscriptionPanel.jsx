@@ -3,13 +3,14 @@ import { Sparkles, FileImage, Loader, CheckCircle, FileText, ClipboardList } fro
 import { autoScanPage, getMatchedContent, analyzeBlooms } from '../services/api';
 
 
-const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete }) => {
+const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete, onAnswerNumbersDetected, prescanPageData }) => {
     const [transcription, setTranscription] = useState('');
     const [questions, setQuestions] = useState([]);
     const [diagrams, setDiagrams] = useState([]);
     const [matchedContent, setMatchedContent] = useState({});
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [detectedAnswerNums, setDetectedAnswerNums] = useState([]);
     const panelRef = useRef(null);
 
     // Blooms Taxonomy State
@@ -90,6 +91,21 @@ const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete }) =>
         setQuestions([]);
         setDiagrams([]);
 
+        // Use prescan data if available (instant load)
+        if (prescanPageData) {
+            setTranscription(prescanPageData.transcription || '');
+            setQuestions(prescanPageData.questions || []);
+            setDiagrams(prescanPageData.diagrams || []);
+            onTranscriptionComplete?.(prescanPageData.transcription || '');
+
+            const ansNums = prescanPageData.answer_numbers || [];
+            setDetectedAnswerNums(ansNums);
+            onAnswerNumbersDetected?.(ansNums);
+            setLoading(false);
+            return;
+        }
+
+        // Fallback: call API (will also cache for next time)
         try {
             const result = await autoScanPage(answersheetId, page);
 
@@ -98,11 +114,32 @@ const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete }) =>
                 setQuestions(result.questions || []);
                 setDiagrams(result.diagrams || []);
                 onTranscriptionComplete?.(result.transcription);
+
+                let ansNums = result.answer_numbers || [];
+
+                const transcriptionText = result.transcription || '';
+                const regex = /\bans(?:wer)?\s*(\d+)\s*[:.\-)]/gi;
+                let match;
+                const regexNums = [];
+                while ((match = regex.exec(transcriptionText)) !== null) {
+                    regexNums.push(parseInt(match[1]));
+                }
+                if (regexNums.length > 0) {
+                    const merged = [...new Set([...ansNums, ...regexNums])].sort((a, b) => a - b);
+                    ansNums = merged;
+                }
+
+                setDetectedAnswerNums(ansNums);
+                onAnswerNumbersDetected?.(ansNums);
             } else {
                 setError('Failed to scan page automatically');
+                setDetectedAnswerNums([]);
+                onAnswerNumbersDetected?.([]);
             }
         } catch (err) {
             setError(err.message || 'An error occurred during automatic scanning');
+            setDetectedAnswerNums([]);
+            onAnswerNumbersDetected?.([]);
         } finally {
             setLoading(false);
         }
@@ -135,8 +172,19 @@ const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete }) =>
                     <Sparkles className="w-5 h-5 text-primary-400" />
                     Automatic AI Review
                 </h3>
-                {loading && <div className="text-xs text-primary-400 animate-pulse bg-primary-500/10 px-2 py-1 rounded-full border border-primary-500/20">Scanning...</div>}
-                {!loading && transcription && <div className="text-xs text-green-400 flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20"><CheckCircle className="w-3 h-3" /> Complete</div>}
+                <div className="flex items-center gap-2">
+                    {detectedAnswerNums.length > 0 && (
+                        <div className="flex items-center gap-1">
+                            {detectedAnswerNums.map(num => (
+                                <span key={num} className="text-[10px] font-bold bg-accent-500/20 text-accent-300 px-1.5 py-0.5 rounded-full border border-accent-500/30">
+                                    Ans {num}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                    {loading && <div className="text-xs text-primary-400 animate-pulse bg-primary-500/10 px-2 py-1 rounded-full border border-primary-500/20">Scanning...</div>}
+                    {!loading && transcription && <div className="text-xs text-green-400 flex items-center gap-1 bg-green-500/10 px-2 py-1 rounded-full border border-green-500/20"><CheckCircle className="w-3 h-3" /> Complete</div>}
+                </div>
             </div>
 
             {/* Content */}

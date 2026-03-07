@@ -145,6 +145,7 @@ class AnswerSheet(db.Model):
     question_paper_id = db.Column(db.Integer, db.ForeignKey('question_papers.id'), nullable=True)
     remarks = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(50), default='UPLOADED')  # UPLOADED, FIRST_DONE, SECOND_DONE (legacy: pending, evaluated)
+    scan_status = db.Column(db.String(50), default='not_scanned')  # not_scanned, scanning, scanned
 
     # NEW: Dual-evaluation marks
     teacher_marks = db.Column(db.Float, nullable=True)    # Submitted by first evaluator
@@ -287,5 +288,36 @@ class RubricContent(db.Model):
             'criteria_text': self.criteria_text,
             'max_marks': self.max_marks,
             'created_at': self.created_at.isoformat()
+        }
+
+
+class PageScan(db.Model):
+    """Stores pre-scanned transcription data per page of an answer sheet"""
+    __tablename__ = 'page_scans'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    answer_sheet_id = db.Column(db.Integer, db.ForeignKey('answer_sheets.id'), nullable=False)
+    page_number = db.Column(db.Integer, nullable=False)
+    transcription = db.Column(db.Text, nullable=True)
+    questions_json = db.Column(db.Text, nullable=True)   # JSON array of {id, content}
+    diagrams_json = db.Column(db.Text, nullable=True)     # JSON array of diagram objects
+    answer_numbers_json = db.Column(db.Text, nullable=True)  # JSON array of ints e.g. [1, 2]
+    scanned_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        db.UniqueConstraint('answer_sheet_id', 'page_number', name='unique_sheet_page'),
+    )
+    
+    def to_dict(self):
+        import json
+        return {
+            'id': self.id,
+            'answer_sheet_id': self.answer_sheet_id,
+            'page_number': self.page_number,
+            'transcription': self.transcription,
+            'questions': json.loads(self.questions_json) if self.questions_json else [],
+            'diagrams': json.loads(self.diagrams_json) if self.diagrams_json else [],
+            'answer_numbers': json.loads(self.answer_numbers_json) if self.answer_numbers_json else [],
+            'scanned_at': self.scanned_at.isoformat() if self.scanned_at else None
         }
 
