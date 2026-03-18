@@ -328,18 +328,49 @@ def export_subject_marks(subject_id):
 
 
 def get_total_marks_logic(answer_sheet_id):
-    """Helper for total marks calculation (ported from evaluation route)"""
+    """Helper for total marks calculation.
+    Computes total max marks from unique questions.
+    For awarded marks, uses the AnswerSheet.final_marks if available, 
+    otherwise falls back to teacher_marks or external_marks if only one exists,
+    or manually computes average if neither are yet finalized on the sheet.
+    """
     try:
+        from models import AnswerSheet, Mark
+        sheet = AnswerSheet.query.get(answer_sheet_id)
+        if not sheet: return {'total_awarded': 0, 'total_max': 0, 'percentage': 0}
+        
         marks = Mark.query.filter_by(answer_sheet_id=answer_sheet_id).all()
         if not marks: return {'total_awarded': 0, 'total_max': 0, 'percentage': 0}
-        total_awarded = sum(mark.marks_awarded for mark in marks)
-        total_max = sum(mark.max_marks for mark in marks)
+        
+        # Calculate Max Marks (sum of unique questions)
+        unique_questions = {}
+        for m in marks:
+            if m.question_number not in unique_questions:
+                unique_questions[m.question_number] = m.max_marks
+        total_max = sum(unique_questions.values())
+        
+        # Calculate Awarded Marks
+        if sheet.final_marks is not None:
+            total_awarded = sheet.final_marks
+        elif sheet.teacher_marks is not None:
+            total_awarded = sheet.teacher_marks
+        elif sheet.external_marks is not None:
+            total_awarded = sheet.external_marks
+        else:
+            # Fallback (e.g. legacy or partial)
+            total_awarded = 0
+            for q_num in unique_questions:
+                q_marks = [m.marks_awarded for m in marks if m.question_number == q_num]
+                if q_marks:
+                    total_awarded += sum(q_marks) / len(q_marks)
+                
         return {
             'total_awarded': total_awarded,
             'total_max': total_max,
             'percentage': (total_awarded / total_max * 100) if total_max > 0 else 0
         }
-    except:
+    except Exception as e:
+        print(f"Error in get_total_marks_logic: {str(e)}")
         return None
 
 

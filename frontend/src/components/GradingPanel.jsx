@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FileText, BookOpen, ChevronLeft, ChevronRight, Save, TrendingUp, CheckCircle, Plus, Loader, Search, AlertCircle } from 'lucide-react';
-import { saveMarks, getMarks, getTotalMarks, saveReport, getQuestionContents, getRubricContents, scanAllPages } from '../services/api';
+import { FileText, BookOpen, ChevronLeft, ChevronRight, Save, TrendingUp, CheckCircle, Plus, Loader, Search, AlertCircle, Bot, Check, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { saveMarks, getMarks, getTotalMarks, saveReport, getQuestionContents, getRubricContents, scanAllPages, aiEvaluateQuestion } from '../services/api';
 
 const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onViewQuestionPaper, onViewRubric, onGradingProgress, evaluatorRole = 'teacher', activeAnswerNumber }) => {
     const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
@@ -23,6 +23,12 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
     const [remarks, setRemarks] = useState('');
     const [evaluationComplete, setEvaluationComplete] = useState(false);
     const [submittingReport, setSubmittingReport] = useState(false);
+
+    // AI Evaluation state
+    const [aiResult, setAiResult] = useState(null);
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiExpanded, setAiExpanded] = useState(true);
+    const [aiError, setAiError] = useState(null);
     const autoScannedRef = useRef(false);
 
     // Auto-select correct QP and rubric based on subject
@@ -258,6 +264,8 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
             setCurrentQuestionIdx(prev => prev - 1);
         }
         setEvaluationComplete(false);
+        setAiResult(null);
+        setAiError(null);
     };
 
     const handleAddQuestion = () => {
@@ -283,6 +291,41 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
             alert('Failed to save report');
         } finally {
             setSubmittingReport(false);
+        }
+    };
+
+    const handleAiEvaluate = async () => {
+        const qNum = detectedQuestions[currentQuestionIdx];
+        if (!qNum) return;
+        if (!maxMarks || parseFloat(maxMarks) <= 0) {
+            setAiError('Please enter max marks before requesting AI evaluation.');
+            return;
+        }
+
+        setAiLoading(true);
+        setAiError(null);
+        setAiResult(null);
+        setAiExpanded(true);
+
+        try {
+            const qNumInt = parseInt(String(qNum).replace(/[^0-9]/g, '')) || (currentQuestionIdx + 1);
+            const result = await aiEvaluateQuestion(answersheetId, qNumInt, parseFloat(maxMarks));
+            if (result.success) {
+                setAiResult(result);
+            } else {
+                setAiError(result.explanation || result.error || 'AI evaluation failed.');
+            }
+        } catch (err) {
+            console.error('AI evaluation error:', err);
+            setAiError(err.response?.data?.error || err.message || 'Failed to get AI evaluation.');
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    const handleApplySuggestion = () => {
+        if (aiResult && aiResult.suggested_marks !== null && aiResult.suggested_marks !== undefined) {
+            setMarksAwarded(String(aiResult.suggested_marks));
         }
     };
 
@@ -521,6 +564,169 @@ const GradingPanel = ({ answersheetId, answerSheet, questionPapers, rubrics, onV
 
 
 
+                    {/* Rubric Criteria Display */}
+                    {currentRubric && (
+                        <div className="mb-4 bg-white bg-opacity-5 rounded-lg border border-white border-opacity-10 overflow-hidden">
+                            <div className="bg-accent-500/10 px-3 py-1.5 border-b border-white border-opacity-5 flex items-center gap-1.5">
+                                <BookOpen className="w-3 h-3 text-accent-400" />
+                                <span className="text-[10px] uppercase tracking-wider font-bold text-accent-400">Evaluation Criteria</span>
+                                {currentRubric.max_marks && (
+                                    <span className="ml-auto text-[10px] text-accent-300 font-mono">{currentRubric.max_marks} marks</span>
+                                )}
+                            </div>
+                            <div className="p-3 text-sm leading-relaxed whitespace-pre-wrap max-h-32 overflow-auto custom-scrollbar">
+                                {currentRubric.criteria_text}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ═══ AI EVALUATION SECTION ═══ */}
+                    {detectedQuestions.length > 0 && (
+                        <div className="mb-4 rounded-lg border border-purple-500/30 overflow-hidden bg-purple-500/5">
+                            {/* Header */}
+                            <div
+                                className="px-3 py-2 flex items-center justify-between cursor-pointer hover:bg-purple-500/10 transition-colors"
+                                onClick={() => setAiExpanded(!aiExpanded)}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Bot className="w-4 h-4 text-purple-400" />
+                                    <span className="text-xs font-bold text-purple-300 uppercase tracking-wider">AI Evaluation Assistant</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {aiResult && (
+                                        <span className="text-xs font-mono text-purple-300 bg-purple-500/20 px-2 py-0.5 rounded-full">
+                                            {aiResult.suggested_marks} / {aiResult.max_marks}
+                                        </span>
+                                    )}
+                                    {aiExpanded ? <ChevronUp className="w-3.5 h-3.5 text-purple-400" /> : <ChevronDown className="w-3.5 h-3.5 text-purple-400" />}
+                                </div>
+                            </div>
+
+                            {aiExpanded && (
+                                <div className="border-t border-purple-500/20 p-3 space-y-3">
+                                    {/* Get AI Suggestion Button */}
+                                    {!aiResult && !aiLoading && (
+                                        <div className="space-y-2">
+                                            <p className="text-[10px] text-gray-400">
+                                                AI will compare the student's answer against the rubric and suggest marks. Enter max marks first.
+                                            </p>
+                                            <button
+                                                onClick={handleAiEvaluate}
+                                                disabled={!maxMarks || parseFloat(maxMarks) <= 0}
+                                                className="w-full py-2 px-3 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-purple-200 text-sm font-semibold flex items-center justify-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                            >
+                                                <Bot className="w-4 h-4" />
+                                                Get AI Suggestion
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Loading */}
+                                    {aiLoading && (
+                                        <div className="flex flex-col items-center py-4 gap-2">
+                                            <Loader className="w-6 h-6 text-purple-400 animate-spin" />
+                                            <p className="text-xs text-purple-300 animate-pulse">Evaluating answer with AI...</p>
+                                        </div>
+                                    )}
+
+                                    {/* Error */}
+                                    {aiError && (
+                                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                                            <p className="text-xs text-red-400">{aiError}</p>
+                                            <button
+                                                onClick={handleAiEvaluate}
+                                                className="mt-2 text-[10px] text-red-300 underline hover:text-red-200"
+                                            >
+                                                Try Again
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* AI Result */}
+                                    {aiResult && (
+                                        <div className="space-y-3">
+                                            {/* Suggested Marks Bar */}
+                                            <div className="bg-black/20 rounded-lg p-3">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-xs text-gray-400 font-semibold">Suggested Marks</span>
+                                                    <span className="text-lg font-bold text-purple-300 font-mono">
+                                                        {aiResult.suggested_marks} <span className="text-xs text-gray-500">/ {aiResult.max_marks}</span>
+                                                    </span>
+                                                </div>
+                                                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                                                    <div
+                                                        className="h-full bg-gradient-to-r from-purple-500 to-pink-500 rounded-full transition-all duration-500"
+                                                        style={{ width: `${aiResult.max_marks > 0 ? (aiResult.suggested_marks / aiResult.max_marks * 100) : 0}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Covered Points */}
+                                            {aiResult.covered_points && aiResult.covered_points.length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-wider text-green-400 font-bold mb-1.5">✅ Covered Points</p>
+                                                    <div className="space-y-1">
+                                                        {aiResult.covered_points.map((point, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 text-xs text-green-200/80 bg-green-500/5 rounded px-2 py-1.5 border border-green-500/10">
+                                                                <Check className="w-3 h-3 text-green-400 mt-0.5 shrink-0" />
+                                                                <span>{point}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Missing Points */}
+                                            {aiResult.missing_points && aiResult.missing_points.length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] uppercase tracking-wider text-red-400 font-bold mb-1.5">❌ Missing Points</p>
+                                                    <div className="space-y-1">
+                                                        {aiResult.missing_points.map((point, idx) => (
+                                                            <div key={idx} className="flex items-start gap-2 text-xs text-red-200/80 bg-red-500/5 rounded px-2 py-1.5 border border-red-500/10">
+                                                                <X className="w-3 h-3 text-red-400 mt-0.5 shrink-0" />
+                                                                <span>{point}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Explanation */}
+                                            {aiResult.explanation && (
+                                                <div className="bg-white/5 rounded-lg p-2.5 border border-white/10">
+                                                    <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold mb-1">Rationale</p>
+                                                    <p className="text-xs text-gray-300 leading-relaxed">{aiResult.explanation}</p>
+                                                </div>
+                                            )}
+
+                                            {/* Action Buttons */}
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={handleApplySuggestion}
+                                                    className="flex-1 py-2 px-3 rounded-lg bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/30 text-purple-100 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    Apply Suggestion
+                                                </button>
+                                                <button
+                                                    onClick={handleAiEvaluate}
+                                                    className="py-2 px-3 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-xs flex items-center justify-center gap-1.5 transition-colors"
+                                                >
+                                                    <Loader className="w-3.5 h-3.5" />
+                                                    Re-evaluate
+                                                </button>
+                                            </div>
+
+                                            {/* Disclaimer */}
+                                            <p className="text-[9px] text-gray-500 text-center italic">
+                                                AI suggestion is advisory only. The final marks saved are always what you enter manually.
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* No content hint */}
                     {!currentQuestionText && !currentRubric && detectedQuestions.length === 0 && !scanning && (

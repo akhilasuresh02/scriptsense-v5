@@ -145,6 +145,114 @@ button, a, input, select, textarea {
   to { transform: rotate(360deg); }
 }
 
+/* ── Landing Page Animations ─────────────────── */
+
+/* Step flow — sequential highlight through 3 steps */
+@keyframes stepFlow {
+  0%, 5%    { opacity: 1; transform: scale(1.03); box-shadow: 0 0 30px rgba(99, 102, 241, 0.25); }
+  28%, 100% { opacity: 0.7; transform: scale(1); box-shadow: 0 0 0 transparent; }
+}
+.step-card-1 { animation: stepFlow 6s ease-in-out infinite; }
+.step-card-2 { animation: stepFlow 6s ease-in-out 2s infinite; }
+.step-card-3 { animation: stepFlow 6s ease-in-out 4s infinite; }
+
+/* Step number pulse — each step number glows in order */
+@keyframes stepPulse {
+  0%, 10%   { transform: scale(1.3); box-shadow: 0 0 20px currentColor; }
+  30%, 100% { transform: scale(1); box-shadow: 0 0 0 transparent; }
+}
+.step-num-1 { animation: stepPulse 6s ease-in-out infinite; }
+.step-num-2 { animation: stepPulse 6s ease-in-out 2s infinite; }
+.step-num-3 { animation: stepPulse 6s ease-in-out 4s infinite; }
+
+/* Connector line draw */
+@keyframes drawLine {
+  0%   { width: 0; opacity: 0; }
+  15%  { opacity: 1; }
+  50%  { width: 100%; opacity: 1; }
+  100% { width: 100%; opacity: 0.4; }
+}
+.connector-line-1 { animation: drawLine 6s ease-in-out infinite; }
+.connector-line-2 { animation: drawLine 6s ease-in-out 2s infinite; }
+
+/* Arrow tip bounce */
+@keyframes arrowBounce {
+  0%, 100% { transform: translateX(0); opacity: 0.5; }
+  50%      { transform: translateX(4px); opacity: 1; }
+}
+.animate-arrow-bounce {
+  animation: arrowBounce 2s ease-in-out infinite;
+}
+
+/* Icon float — gentle up-down on step icons */
+@keyframes iconFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+.step-icon-1 { animation: iconFloat 3s ease-in-out infinite; }
+.step-icon-2 { animation: iconFloat 3s ease-in-out 1s infinite; }
+.step-icon-3 { animation: iconFloat 3s ease-in-out 2s infinite; }
+
+/* Breathe — subtle scale pulse */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: 0.7; }
+  50%      { transform: scale(1.05); opacity: 1; }
+}
+.animate-breathe {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+/* Fade-in-up — scroll reveal */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s ease-out both;
+}
+
+/* Staggered delays */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-600 { animation-delay: 0.6s; }
+
+/* Glow drift — ambient floating orbs */
+@keyframes glowDrift {
+  0%, 100% { transform: translate(0, 0) scale(1); opacity: 0.5; }
+  25%      { transform: translate(30px, -20px) scale(1.1); opacity: 0.7; }
+  50%      { transform: translate(-20px, 15px) scale(0.95); opacity: 0.4; }
+  75%      { transform: translate(15px, 25px) scale(1.05); opacity: 0.6; }
+}
+.animate-glow-drift {
+  animation: glowDrift 8s ease-in-out infinite;
+}
+.animate-glow-drift-reverse {
+  animation: glowDrift 10s ease-in-out infinite reverse;
+}
+
+/* Shimmer — gradient sweep on borders */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+.shimmer-border {
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.08) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+}
+
+/* Sidebar feature item active indicator glow */
+@keyframes sidebarGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.3); }
+  50%      { box-shadow: 0 0 30px rgba(99, 102, 241, 0.5); }
+}
+.animate-sidebar-glow {
+  animation: sidebarGlow 2.5s ease-in-out infinite;
+}
+
 /* File upload drag area */
 .drag-active {
   @apply border-primary-500 bg-primary-500 bg-opacity-10;

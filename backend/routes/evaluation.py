@@ -384,10 +384,28 @@ def get_results():
         
         results = []
         for sheet in evaluated_sheets:
-            # Calculate total marks
+            # Calculate total marks properly
             marks = Mark.query.filter_by(answer_sheet_id=sheet.id).all()
-            total_awarded = sum(m.marks_awarded for m in marks)
-            total_max = sum(m.max_marks for m in marks)
+            
+            unique_questions = {}
+            for m in marks:
+                if m.question_number not in unique_questions:
+                    unique_questions[m.question_number] = m.max_marks
+            total_max = sum(unique_questions.values())
+            
+            if sheet.final_marks is not None:
+                total_awarded = sheet.final_marks
+            elif sheet.teacher_marks is not None:
+                total_awarded = sheet.teacher_marks
+            elif sheet.external_marks is not None:
+                total_awarded = sheet.external_marks
+            else:
+                total_awarded = 0
+                for q_num in unique_questions:
+                    q_marks = [m.marks_awarded for m in marks if m.question_number == q_num]
+                    if q_marks:
+                        total_awarded += sum(q_marks) / len(q_marks)
+            
             percentage = (total_awarded / total_max * 100) if total_max > 0 else 0
             
             # Get Question Paper title
@@ -432,8 +450,26 @@ def export_results():
         
         for sheet in evaluated_sheets:
             marks = Mark.query.filter_by(answer_sheet_id=sheet.id).all()
-            total_awarded = sum(m.marks_awarded for m in marks)
-            total_max = sum(m.max_marks for m in marks)
+            
+            unique_questions = {}
+            for m in marks:
+                if m.question_number not in unique_questions:
+                    unique_questions[m.question_number] = m.max_marks
+            total_max = sum(unique_questions.values())
+            
+            if sheet.final_marks is not None:
+                total_awarded = sheet.final_marks
+            elif sheet.teacher_marks is not None:
+                total_awarded = sheet.teacher_marks
+            elif sheet.external_marks is not None:
+                total_awarded = sheet.external_marks
+            else:
+                total_awarded = 0
+                for q_num in unique_questions:
+                    q_marks = [m.marks_awarded for m in marks if m.question_number == q_num]
+                    if q_marks:
+                        total_awarded += sum(q_marks) / len(q_marks)
+            
             percentage = (total_awarded / total_max * 100) if total_max > 0 else 0
             qp = QuestionPaper.query.get(sheet.question_paper_id) if sheet.question_paper_id else None
             
@@ -1023,54 +1059,83 @@ def get_prescan_data(answer_sheet_id):
 
         pages = [s.to_dict() for s in scans]
 
-        # Build answer segments: group transcription text by answer number
+        # ── Build answer segments by treating ALL pages as one continuous document ──
+        # This ensures answers that span multiple pages are fully captured.
         answer_segments = {}
 
+        # Step 1: Concatenate all page transcriptions in order
+        full_text = ''
+        page_boundaries = []  # Track where each page starts in the full text
         for page_data in pages:
             text = page_data.get('transcription', '') or ''
-            ans_nums = page_data.get('answer_numbers', [])
             page_num = page_data.get('page_number', 0)
+            start_pos = len(full_text)
+            if full_text and text.strip():
+                full_text += '\n\n'
+            full_text += text
+            page_boundaries.append({
+                'page': page_num,
+                'start': start_pos,
+                'end': len(full_text)
+            })
 
-            if not ans_nums:
-                if 'unassigned' not in answer_segments:
-                    answer_segments['unassigned'] = []
-                if text.strip():
-                    answer_segments['unassigned'].append({
-                        'page': page_num,
-                        'text': text
+        # Step 2: Find ALL answer labels globally across the full text
+        # Allows formats like: ans 5:, ans-5:, answer.5, etc.
+        ans_label_pattern = re.compile(r'(?i)\bans(?:wer)?\s*[-_.]?\s*(\d+)\s*[:.)\-]?')
+        matches = list(ans_label_pattern.finditer(full_text))
+
+        if matches:
+            # Text before the first answer label → unassigned
+            pre_text = full_text[:matches[0].start()].strip()
+            if pre_text:
+                answer_segments['unassigned'] = [{'page': 0, 'text': pre_text}]
+
+            # Each answer label marks the start; it continues until the next label
+            for idx, match in enumerate(matches):
+                ans_num = match.group(1)
+                key = str(int(ans_num))
+                content_start = match.end()
+                content_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(full_text)
+                content = full_text[content_start:content_end].strip()
+
+                if key not in answer_segments:
+                    answer_segments[key] = []
+                if content:
+                    # Determine which pages this content spans
+                    start_page = 0
+                    for pb in page_boundaries:
+                        if content_start >= pb['start'] and content_start < pb['end']:
+                            start_page = pb['page']
+                            break
+                    answer_segments[key].append({
+                        'page': start_page,
+                        'text': content
                     })
-            else:
-                # Split text by answer labels
-                parts = re.split(r'(?i)\bans(?:wer)?\s*(\d+)\s*[:.)\-]', text)
+        else:
+            # No answer labels found at all — use page-level answer_numbers as fallback
+            for page_data in pages:
+                text = page_data.get('transcription', '') or ''
+                ans_nums = page_data.get('answer_numbers', [])
+                page_num = page_data.get('page_number', 0)
 
-                if len(parts) > 1:
-                    if parts[0].strip():
-                        if 'unassigned' not in answer_segments:
-                            answer_segments['unassigned'] = []
-                        answer_segments['unassigned'].append({
-                            'page': page_num,
-                            'text': parts[0].strip()
-                        })
-                    for i in range(1, len(parts), 2):
-                        ans_num = int(parts[i])
-                        content = parts[i + 1].strip() if i + 1 < len(parts) else ''
-                        key = str(ans_num)
-                        if key not in answer_segments:
-                            answer_segments[key] = []
-                        if content:
-                            answer_segments[key].append({
-                                'page': page_num,
-                                'text': content
-                            })
-                else:
+                if not text.strip():
+                    continue
+
+                if ans_nums:
                     key = str(ans_nums[0])
                     if key not in answer_segments:
                         answer_segments[key] = []
-                    if text.strip():
-                        answer_segments[key].append({
-                            'page': page_num,
-                            'text': text.strip()
-                        })
+                    answer_segments[key].append({
+                        'page': page_num,
+                        'text': text.strip()
+                    })
+                else:
+                    if 'unassigned' not in answer_segments:
+                        answer_segments['unassigned'] = []
+                    answer_segments['unassigned'].append({
+                        'page': page_num,
+                        'text': text.strip()
+                    })
 
         return jsonify({
             'success': True,
@@ -1139,3 +1204,145 @@ def analyze_blooms():
     except Exception as e:
         print(f"❌ Error analyzing Bloom's: {str(e)}")
         return jsonify({'error': str(e), 'success': False}), 500
+
+
+@evaluation_bp.route('/ai-evaluate', methods=['POST'])
+def ai_evaluate():
+    """AI-assisted evaluation for a single question.
+    
+    Aggregates the student's answer from PageScan data, fetches rubric criteria,
+    and uses Gemini to suggest marks with detailed explanation.
+    
+    This is ADVISORY ONLY — does NOT save anything to the database.
+    """
+    try:
+        data = request.json
+        answer_sheet_id = data.get('answersheetId')
+        question_number = data.get('questionNumber')  # e.g. 1, 2, "Q1."
+        max_marks = data.get('maxMarks')
+
+        if not answer_sheet_id or question_number is None or not max_marks:
+            return jsonify({
+                'error': 'Missing required fields: answersheetId, questionNumber, maxMarks',
+                'success': False
+            }), 400
+
+        answer_sheet = AnswerSheet.query.get_or_404(answer_sheet_id)
+        q_num_str = str(question_number)
+        # Extract just the numeric part for matching
+        import re
+        q_num_clean = re.sub(r'[^0-9]', '', q_num_str)
+
+        print(f"🤖 AI Evaluate: sheet={answer_sheet_id}, Q={q_num_str}, max={max_marks}")
+
+        # ── 1. Aggregate student's COMPLETE answer from PageScan ──
+        # Concatenate ALL pages into one continuous document, then split by answer labels.
+        # This ensures answers that span multiple pages are fully captured.
+        scans = PageScan.query.filter_by(
+            answer_sheet_id=answer_sheet_id
+        ).order_by(PageScan.page_number).all()
+
+        # Build full text from all pages
+        full_text = ''
+        for scan in scans:
+            scan_data = scan.to_dict()
+            text = scan_data.get('transcription', '') or ''
+            if text.strip():
+                if full_text:
+                    full_text += '\n\n'
+                full_text += text
+
+        # Find all answer labels globally
+        # Allows formats like: ans 5:, ans-5:, answer.5, etc.
+        ans_label_pattern = re.compile(r'(?i)\bans(?:wer)?\s*[-_.]?\s*(\d+)\s*[:.)\-]?')
+        matches = list(ans_label_pattern.finditer(full_text))
+
+        student_answer = ''
+        found_via_regex = False
+
+        if matches:
+            # Find the match for our question number
+            target_match_idx = None
+            for idx, match in enumerate(matches):
+                if match.group(1) == q_num_clean:
+                    target_match_idx = idx
+                    break
+
+            if target_match_idx is not None:
+                found_via_regex = True
+                content_start = matches[target_match_idx].end()
+                # Content extends until the next answer label (or end of document)
+                content_end = matches[target_match_idx + 1].start() if target_match_idx + 1 < len(matches) else len(full_text)
+                student_answer = full_text[content_start:content_end].strip()
+        
+        if not found_via_regex:
+            # Specific answer label not found — fallback: use page-level answer_numbers
+            for scan in scans:
+                scan_data = scan.to_dict()
+                ans_nums = scan_data.get('answer_numbers', [])
+                text = scan_data.get('transcription', '') or ''
+                if not text.strip():
+                    continue
+                ans_nums_str = [str(n) for n in ans_nums]
+                if q_num_clean in ans_nums_str or q_num_str in ans_nums_str:
+                    student_answer += ('\n\n' if student_answer else '') + text.strip()
+
+        if not student_answer.strip():
+            return jsonify({
+                'success': True,
+                'suggested_marks': 0,
+                'max_marks': float(max_marks),
+                'covered_points': [],
+                'missing_points': ['No answer text found for this question in the scanned pages.'],
+                'explanation': 'Could not find the student\'s answer for this question. Make sure the answer sheet has been pre-scanned and answer numbers are detected.',
+                'student_answer_preview': ''
+            }), 200
+
+        # ── 2. Fetch rubric criteria ──
+        rubric_criteria = None
+        if answer_sheet.subject_id:
+            subject_rubrics = EvaluationRubric.query.filter_by(
+                subject_id=answer_sheet.subject_id
+            ).all()
+            for rubric in subject_rubrics:
+                rc = RubricContent.query.filter_by(rubric_id=rubric.id).all()
+                for r in rc:
+                    r_num_clean = re.sub(r'[^0-9]', '', str(r.question_number))
+                    if r_num_clean == q_num_clean or str(r.question_number) == q_num_str:
+                        rubric_criteria = r.criteria_text
+                        break
+                if rubric_criteria:
+                    break
+
+        # ── 3. Fetch question text (optional, for extra context) ──
+        question_text = None
+        if answer_sheet.question_paper_id:
+            qc = QuestionContent.query.filter_by(
+                question_paper_id=answer_sheet.question_paper_id
+            ).all()
+            for q in qc:
+                qc_num_clean = re.sub(r'[^0-9]', '', str(q.question_number))
+                if qc_num_clean == q_num_clean or str(q.question_number) == q_num_str:
+                    question_text = q.question_text
+                    break
+
+        # ── 4. Call AI evaluation ──
+        result = ocr_service.evaluate_answer(
+            student_answer=student_answer,
+            rubric_criteria=rubric_criteria,
+            max_marks=float(max_marks),
+            question_text=question_text
+        )
+
+        # Include a preview of what was sent to the AI
+        preview_len = 500
+        result['student_answer_preview'] = student_answer[:preview_len] + ('...' if len(student_answer) > preview_len else '')
+
+        print(f"✅ AI Evaluation complete: suggested={result.get('suggested_marks')}/{max_marks}")
+
+        return jsonify(result), 200
+
+    except Exception as e:
+        print(f"❌ Error in AI evaluation: {str(e)}")
+        return jsonify({'error': str(e), 'success': False}), 500
+

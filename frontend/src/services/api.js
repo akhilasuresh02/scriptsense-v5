@@ -322,6 +322,16 @@ export const getPrescanData = async (answersheetId) => {
     return response.data;
 };
 
+// AI-assisted evaluation
+export const aiEvaluateQuestion = async (answersheetId, questionNumber, maxMarks) => {
+    const response = await api.post('evaluate/ai-evaluate', {
+        answersheetId,
+        questionNumber,
+        maxMarks
+    });
+    return response.data;
+};
+
 // ── NEW: Auth API functions ───────────────────────────────────────────────────
 
 export const registerFaculty = async (name, email, password, department) => {

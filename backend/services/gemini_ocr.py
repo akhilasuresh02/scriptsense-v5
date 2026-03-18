@@ -392,6 +392,160 @@ class GeminiOCRService:
             print(f"Error in answer key analysis: {str(e)}")
             return {'questions': [], 'success': False, 'error': str(e)}
 
+    def evaluate_answer(self, student_answer, rubric_criteria, max_marks, question_text=None):
+        """
+        Evaluate a student's answer against rubric criteria using Gemini.
+        This is an ADVISORY evaluation — the final marks are always set by the human evaluator.
+
+        Args:
+            student_answer: Transcribed text of the student's answer
+            rubric_criteria: The model answer / evaluation criteria from the rubric
+            max_marks: Maximum marks for this question
+            question_text: Optional question text for additional context
+
+        Returns:
+            dict with suggested_marks, covered_points, missing_points, explanation
+        """
+        try:
+            if not student_answer or not student_answer.strip():
+                return {
+                    'suggested_marks': 0,
+                    'max_marks': max_marks,
+                    'covered_points': [],
+                    'missing_points': ['No answer provided by the student.'],
+                    'explanation': 'The student has not written any answer for this question.',
+                    'success': True
+                }
+
+            if not rubric_criteria or not rubric_criteria.strip():
+                return {
+                    'suggested_marks': None,
+                    'max_marks': max_marks,
+                    'covered_points': [],
+                    'missing_points': [],
+                    'explanation': 'No rubric criteria available for AI evaluation.',
+                    'success': False,
+                    'error': 'Missing rubric criteria'
+                }
+
+            question_context = ""
+            if question_text:
+                question_context = f"\n\nQUESTION:\n{question_text}"
+
+            prompt = f"""You are an academic evaluator. Your task is to evaluate a student's handwritten answer 
+against the provided rubric/answer key criteria.
+
+MAXIMUM MARKS FOR THIS QUESTION: {max_marks}{question_context}
+
+RUBRIC / MODEL ANSWER / EVALUATION CRITERIA:
+{rubric_criteria}
+
+STUDENT'S ANSWER (transcribed from handwriting):
+{student_answer}
+
+EVALUATION INSTRUCTIONS:
+1. Break down the rubric into individual key points or concepts.
+2. For each key point, check if the student's answer covers it (even if worded differently — use semantic understanding).
+3. Award partial marks proportionally based on how many key points are covered.
+4. Consider the quality and depth of explanation, not just keyword matching.
+5. Be fair but strict — the student must demonstrate understanding, not just mention terms.
+6. NEVER award more than {max_marks} marks.
+
+Return the result in valid JSON format:
+{{
+  "suggested_marks": <number between 0 and {max_marks}>,
+  "covered_points": [
+    "Point 1 that the student covered correctly",
+    "Point 2 that the student addressed"
+  ],
+  "missing_points": [
+    "Point X that was in the rubric but missing from the answer",
+    "Point Y that was incomplete or incorrect"
+  ],
+  "explanation": "A brief 2-3 sentence summary of the overall evaluation rationale."
+}}
+
+CRITICAL RULES:
+- suggested_marks must be a number (can be decimal like 3.5).
+- suggested_marks must be between 0 and {max_marks} (inclusive).
+- Each covered_point and missing_point should be a concise, clear statement.
+- The explanation should justify why marks were awarded or deducted.
+- Return ONLY the JSON object. No other text."""
+
+            try:
+                response = self._generate_content_with_retry(
+                    [prompt],
+                    config={"response_mime_type": "application/json"}
+                )
+            except Exception as config_err:
+                print(f"⚠️ JSON mode not supported for evaluation: {config_err}. Falling back.")
+                response = self._generate_content_with_retry([prompt])
+
+            if not response or not response.text:
+                return {
+                    'suggested_marks': None,
+                    'max_marks': max_marks,
+                    'covered_points': [],
+                    'missing_points': [],
+                    'explanation': 'AI returned an empty response.',
+                    'success': False,
+                    'error': 'Empty response from Gemini'
+                }
+
+            import json, re
+            text = response.text
+
+            # Cleanup markdown code blocks
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+
+            if not text.startswith('{'):
+                json_match = re.search(r'(\{.*\})', text, re.DOTALL)
+                if json_match:
+                    text = json_match.group(1)
+
+            try:
+                result = json.loads(text)
+
+                # Clamp suggested marks
+                suggested = result.get('suggested_marks', 0)
+                if suggested is not None:
+                    suggested = max(0, min(float(suggested), float(max_marks)))
+
+                return {
+                    'suggested_marks': suggested,
+                    'max_marks': float(max_marks),
+                    'covered_points': result.get('covered_points', []),
+                    'missing_points': result.get('missing_points', []),
+                    'explanation': result.get('explanation', ''),
+                    'success': True
+                }
+            except json.JSONDecodeError as je:
+                print(f"AI evaluation JSON parse failed: {text[:300]}...")
+                return {
+                    'suggested_marks': None,
+                    'max_marks': max_marks,
+                    'covered_points': [],
+                    'missing_points': [],
+                    'explanation': 'Failed to parse AI evaluation response.',
+                    'success': False,
+                    'error': str(je)
+                }
+
+        except Exception as e:
+            print(f"Error in AI evaluation: {str(e)}")
+            return {
+                'suggested_marks': None,
+                'max_marks': max_marks,
+                'covered_points': [],
+                'missing_points': [],
+                'explanation': f'Error: {str(e)}',
+                'success': False,
+                'error': str(e)
+            }
+
     def process_pdf_region(self, image_data, coordinates=None):
         """
         Process a specific region of a PDF page

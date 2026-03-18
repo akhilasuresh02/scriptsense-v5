@@ -93,12 +93,25 @@ const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete, onAn
 
         // Use prescan data if available (instant load)
         if (prescanPageData) {
-            setTranscription(prescanPageData.transcription || '');
+            const transcriptionText = prescanPageData.transcription || '';
+            setTranscription(transcriptionText);
             setQuestions(prescanPageData.questions || []);
             setDiagrams(prescanPageData.diagrams || []);
-            onTranscriptionComplete?.(prescanPageData.transcription || '');
+            onTranscriptionComplete?.(transcriptionText);
 
-            const ansNums = prescanPageData.answer_numbers || [];
+            let ansNums = prescanPageData.answer_numbers || [];
+            
+            // Regex fallback if Gemini missed JSON structure
+            const regex = /\bans(?:wer)?\s*[-_.]?\s*(\d+)\s*[:.\-)]?/gi;
+            let match;
+            const regexNums = [];
+            while ((match = regex.exec(transcriptionText)) !== null) {
+                regexNums.push(parseInt(match[1]));
+            }
+            if (regexNums.length > 0) {
+                ansNums = [...new Set([...ansNums, ...regexNums])].sort((a, b) => a - b);
+            }
+
             setDetectedAnswerNums(ansNums);
             onAnswerNumbersDetected?.(ansNums);
             setLoading(false);
@@ -110,23 +123,22 @@ const TranscriptionPanel = ({ answersheetId, page, onTranscriptionComplete, onAn
             const result = await autoScanPage(answersheetId, page);
 
             if (result.success) {
-                setTranscription(result.transcription);
+                const transcriptionText = result.transcription || '';
+                setTranscription(transcriptionText);
                 setQuestions(result.questions || []);
                 setDiagrams(result.diagrams || []);
-                onTranscriptionComplete?.(result.transcription);
+                onTranscriptionComplete?.(transcriptionText);
 
                 let ansNums = result.answer_numbers || [];
 
-                const transcriptionText = result.transcription || '';
-                const regex = /\bans(?:wer)?\s*(\d+)\s*[:.\-)]/gi;
+                const regex = /\bans(?:wer)?\s*[-_.]?\s*(\d+)\s*[:.\-)]?/gi;
                 let match;
                 const regexNums = [];
                 while ((match = regex.exec(transcriptionText)) !== null) {
                     regexNums.push(parseInt(match[1]));
                 }
                 if (regexNums.length > 0) {
-                    const merged = [...new Set([...ansNums, ...regexNums])].sort((a, b) => a - b);
-                    ansNums = merged;
+                    ansNums = [...new Set([...ansNums, ...regexNums])].sort((a, b) => a - b);
                 }
 
                 setDetectedAnswerNums(ansNums);
