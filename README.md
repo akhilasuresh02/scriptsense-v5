@@ -36,6 +36,26 @@ ScriptSense is a comprehensive full-stack application designed to automate and a
 - **Utilities**: Pillow, Python-dotenv, Werkzeug, openpyxl
 
 ---
+## Screenshots
+
+### Landing Page
+<img width="940" height="458" alt="image" src="https://github.com/user-attachments/assets/85184391-102e-4dd8-8c44-6aa4f1283897" />
+<img width="940" height="448" alt="image" src="https://github.com/user-attachments/assets/451add92-822f-48c0-8f0a-fa5f225f1658" />
+
+### SignUp and Login Pages
+<img width="940" height="461" alt="image" src="https://github.com/user-attachments/assets/6c585360-efce-4c37-9a37-3e368ef53f09" />
+<img width="940" height="461" alt="image" src="https://github.com/user-attachments/assets/1700a67f-f91b-46d7-9335-59ab1eb1d7ea" />
+
+### Dashboards
+<img width="940" height="457" alt="image" src="https://github.com/user-attachments/assets/c29e877f-7841-48b2-8580-75acc476a722" />
+<img width="940" height="461" alt="image" src="https://github.com/user-attachments/assets/3d928c75-c2f7-4c03-9033-3ef14d4cae96" />
+<img width="940" height="454" alt="image" src="https://github.com/user-attachments/assets/5639f140-961e-4359-9733-7b52358f0f77" />
+
+### AI Assisted Evaluation Pages
+
+<img width="940" height="473" alt="image" src="https://github.com/user-attachments/assets/968610d1-5da8-4ee0-b6be-9c459b95c7bd" />
+<img width="940" height="471" alt="image" src="https://github.com/user-attachments/assets/ef9e6bcd-3837-4bea-a1cb-157408b1dfc4" />
+<img width="940" height="455" alt="image" src="https://github.com/user-attachments/assets/4b15440a-7824-467d-ba25-362c7ea95c15" />
 
 ## 🚀 Getting Started
 
@@ -47,8 +67,8 @@ ScriptSense is a comprehensive full-stack application designed to automate and a
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/akhilasuresh02/scriptsense-v5.git
-cd scriptsense-v5
+git clone https://github.com/akhilasuresh02/scriptsense-v6.git
+cd scriptsense-v6
 ```
 
 ### 2. Backend Setup
